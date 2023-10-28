@@ -1,0 +1,19 @@
+<component name="InspectionProjectProfileManager">
+  <profile version="1.0">
+    <option name="myName" value="Project Default" />
+    <inspection_tool class="PyUnresolvedReferencesInspection" enabled="true" level="WARNING" enabled_by_default="true">
+      <option name="ignoredIdentifiers">
+        <list>
+          <option value="cv2.imread" />
+          <option value="cv2.cvtColor" />
+          <option value="cv2.GaussianBlur" />
+          <option value="cv2.threshold" />
+          <option value="cv2.THRESH_BINARY" />
+          <option value="cv2.THRESH_OTSU" />
+          <option value="cv2.COLOR_BGR2GRAY" />
+          <option value="cv2.imwrite" />
+        </list>
+      </option>
+    </inspection_tool>
+  </profile>
+</component>
