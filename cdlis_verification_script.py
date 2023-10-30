@@ -17,6 +17,7 @@ from selenium.webdriver.support.ui import Select
 
 WORKING_DIRECTORY = os.path.dirname(os.path.abspath(__file__))
 
+
 # Advise activity
 print("Getting Started!")
 
@@ -173,7 +174,7 @@ class CdlisWebCrawler:
         # Verify if driver was found with given information
         try:
             self.crawler.find_element(By.ID, "DriverLicense")
-            print(f"Driver not found with given credentials: {driver_data.last_name},{driver_data.last_name}")
+            print(f"Driver not found with given credentials: {driver_data.last_name},{driver_data.first_name}")
             self.crawler.find_element(By.CLASS_NAME, "Cancel valid")
             return False
         except NoSuchElementException:
@@ -187,7 +188,7 @@ class CdlisWebCrawler:
         # self.crawler.save_screenshot(os.path.join(WORKING_DIRECTORY, f"output/{driver_data.last_name},{driver_data.first_name}.png"))
 
         # This should work no matter screen size and might be the end choice
-        self.crawler.execute_script("document.body.style.zoom='75%'")  # Zoom out document to capture all data
+        self.crawler.execute_script("document.body.style.zoom='50%'")  # Zoom out document to capture all data
         self.crawler.find_element(By.ID, "body").screenshot(os.path.join(WORKING_DIRECTORY, f"output/{driver_data.last_name}_{driver_data.first_name}.png"))
 
     # navigate back to query filter page
@@ -229,8 +230,8 @@ def main():
 
     print("Driver checks complete! Please review the output folder for collected data")
 
-    failed_drivers = "\n".join(cw.failed_searches)
-    print(f"Failed driver checks: {failed_drivers}")
+    #failed_drivers = "\n".join(cw.failed_searches)
+    #print(f"Failed driver checks: {failed_drivers}")
 
     cw.crawler.quit()
 
