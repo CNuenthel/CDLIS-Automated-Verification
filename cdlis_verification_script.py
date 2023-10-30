@@ -24,7 +24,7 @@ print("Getting Started!")
 # Show todays month and day
 print(f"Today's date is {date.today()}")
 
-
+# Helper function to format date of birth data, splitting standard DOB "01/01/2000" to a dict {month: "01", day: "01", year: "2000"}
 def parse_dob_str(dob_timestamp) -> dict:
     stringify_dob = dob_timestamp.strftime("%m/%d/%Y")
     month, day, year = stringify_dob.split("/")
@@ -142,7 +142,7 @@ class CdlisWebCrawler:
         self.crawler.find_element(By.ID, "btnStartFilter").click()
 
     # input driver data
-    def fill_driver_data(self, driver_data: Driver):
+    def fill_driver_data(self, driver_data: Driver): # TODO add print statement to show driver being checked
         # Fill in OLN
         oln_input = self.crawler.find_element(By.ID, "DriverLicense")
         oln_input.send_keys(driver_data.oln)
@@ -180,16 +180,9 @@ class CdlisWebCrawler:
         except NoSuchElementException:
             return True
 
-    def snapshot_driver_info(self, driver_data: Driver):
-        # TODO verify this code body for work computer to operate at high level
-        # height = self.crawler.execute_script("return document.body.parentNode.scrollHeight")
-        # width = self.crawler.execute_script("return document.body.parentNode.scrollWidth")
-        # self.crawler.set_window_size(height=height, width=width)
-        # self.crawler.save_screenshot(os.path.join(WORKING_DIRECTORY, f"output/{driver_data.last_name},{driver_data.first_name}.png"))
-
-        # This should work no matter screen size and might be the end choice
-        self.crawler.execute_script("document.body.style.zoom='50%'")  # Zoom out document to capture all data
-        self.crawler.find_element(By.ID, "body").screenshot(os.path.join(WORKING_DIRECTORY, f"output/{driver_data.last_name}_{driver_data.first_name}.png"))
+    def snapshot_driver_info(self): # TODO Parse document information to excel sheet
+        # Get table data from CDLIS website, creates a list of webelement objects
+        table_data = self.crawler.find_elements(By.CLASS_NAME, "reportTable")
 
     # navigate back to query filter page
     def return_to_search_page(self):
@@ -219,7 +212,7 @@ def main():
 
             # If driver search fails, cut block and return to filter page
             if cw.search_driver(drv):
-                cw.snapshot_driver_info(drv)
+                cw.snapshot_driver_info()
                 cw.return_to_search_page()
             else:
                 continue
@@ -234,6 +227,24 @@ def main():
     #print(f"Failed driver checks: {failed_drivers}")
 
     cw.crawler.quit()
+
+
+class CdlisWebdataParser:
+    def __init__(self, web_document_html: WebElement):
+        self.web_doc = web_document_html
+
+
+    def parse_doc_to_lists(self):
+        doc_dict = {}
+        for i, line in enumerate(self.web_doc):
+            split_string_data = " ".join(line.text.splitlines()).split(" ")
+            doc_dict[f"header {i}"] = split_string_data[]  
+
+
+
+
+
+
 
 
 if __name__ == "__main__":
