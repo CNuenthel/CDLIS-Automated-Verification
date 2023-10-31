@@ -14,6 +14,12 @@ from selenium.webdriver.chrome.service import Service
 from datetime import date
 import pandas as pd
 from selenium.webdriver.support.ui import Select
+from selenium.webdriver.remote.webelement import WebElement
+import openpyxl
+import usaddress
+from typing_extensions import dataclass_transform
+from dataclasses import dataclass
+
 
 WORKING_DIRECTORY = os.path.dirname(os.path.abspath(__file__))
 
@@ -75,6 +81,16 @@ class DriverDataParser:
         if self.driver_pool:
             return self.driver_pool.pop()
         return False
+
+
+class CdlisWebdataParser:
+    def __init__(self, web_document_html: list[WebElement]):
+        self.web_doc = web_document_html
+
+    def parse_doc_to_lists(self) -> list[str]:
+        string_data = " ".join([item.text for item in self.web_doc])
+        split_string_data = [item for i, item in enumerate(string_data.splitlines()) if item != "" and i%2 == 0]
+        return split_string_data
 
 
 class CdlisWebCrawler:
@@ -180,9 +196,15 @@ class CdlisWebCrawler:
         except NoSuchElementException:
             return True
 
-    def snapshot_driver_info(self): # TODO Parse document information to excel sheet
+    def snapshot_driver_info(self, driver_data: Driver): # TODO Parse document information to excel sheet
         # Get table data from CDLIS website, creates a list of webelement objects
         table_data = self.crawler.find_elements(By.CLASS_NAME, "reportTable")
+        cwdp = CdlisWebdataParser(table_data)
+        
+        if driver_data.dl_country == "Canada":
+            formatted_webdata = cwdp.parse_doc_to_lists()
+            driver_table_parser = DriverTableParser()
+            print(driver_table_parser.parse_canada(formatted_webdata))
 
     # navigate back to query filter page
     def return_to_search_page(self):
@@ -190,6 +212,142 @@ class CdlisWebCrawler:
         self.crawler.find_element(By.CLASS_NAME, "Cancel").click()
 
 
+@dataclass
+class CanDriverData:
+    first_name: str = ""
+    middle_name: str = ""
+    last_name: str = ""
+    suffix: str = ""
+    ssn: str = ""
+    dob: str = ""
+    height: str = ""
+    weight: str = ""
+    eye_color: str = ""
+    sex: str = ""
+    address: str = ""
+    city: str = ""
+    state: str = ""
+    zip: str = ""
+    jurisdiction: str = ""
+    oln: str = ""
+    issue_date: str = ""
+    expiration_date: str = ""
+    commercial_class: str = ""
+    noncommercial_class: str = ""
+    commercial_status: str = ""
+    noncommercial_status: str = ""
+    withdrawal_action: str = ""
+    endorsement: str = ""
+    convictions: int = ""
+    accidents: int = ""
+    withdrawals: int = ""
+    permits: int = ""
+    license_restrictions: int = ""
+
+
+class DriverTableParser:
+    """ This class holds methods to parse CDLIS string table data for use in formatting to an excel output """
+    def __init__(self):
+        self.output_file = "DriverDataOutput.xlsx"
+
+    def parse_canada(self, can_table_data: list[str]) -> CanDriverData:
+        """ Parses driver data from a canadian driver CDLIS table """
+        driver = CanDriverData()
+
+        # Parse name information to dictionary, row 1
+        # Split string data, first row to components
+        name_split = can_table_data[0].split(" ")
+
+        # Parse data 
+        driver.first_name = name_split[0]
+        driver.middle_name = name_split[1]
+        driver.last_name = name_split[2]
+        driver.suffix = name_split[3]
+
+        # Parse DOB information to dictionary, row 2
+        # Split string data, second row to components
+        dob_split = can_table_data[1].split(" ")
+
+        # Parse data
+        driver.ssn = dob_split[0]
+        driver.dob = dob_split[1]
+        driver.height = dob_split[2]
+
+        # Match length of split data due to uncertainty of information. If weight and/or eye color is present the list will dynamically change
+        # from the input data
+        match len(dob_split):
+            case 6:
+                driver.weight = dob_split[3]
+                driver.eye_color = dob_split[4]
+                driver.sex = dob_split[5]
+            case 5:
+                driver.sex = dob_split[4]
+            case 4:
+                driver.sex = dob_split[3]
+
+
+        # Parse address information to dictionary, row 3
+        # Use usaddress module to parse address data 
+        address = can_table_data[2]
+        components = usaddress.parse(address)
+
+        # Create lists to assign parsed data as usaddress parses each string to a category in a list -> [(data, category), ..]
+        street_address = []
+        city = []
+        state = []
+        zip = []
+
+        # Parse categories to appropriate list
+        for item in components:
+            if item[1] in ["AddressNumber", "StreetName", "StreetNamePostType"]:
+                street_address.append(item[0])
+            elif item[1] in ["PlaceName"]:
+                city.append(item[0])
+            elif item[1] in ["StateName"]:
+                state.append(item[0])
+            elif item[1] in ["ZipCode"]:
+                zip.append(item[0])
+            else:
+                # Advise of unassigned categories for further processing if necessary
+                print(f"{item[1]} is unassigned")
+
+        # Assign parsed data to DriverData object
+        driver.address = " ".join(street_address)
+        driver.city = " ".join(city)
+        driver.state = " ".join(state)
+        driver.zip = " ".join(state)
+
+        # Parse DL information to dictionary, row 4
+        # Split string data, fourth row to components
+        dl_split = can_table_data[3].split(" ")
+
+        driver.jurisdiction = dl_split[0]
+        driver.oln = dl_split[1]
+        driver.issue_date = dl_split[2]
+        driver.expiration_date = dl_split[3]
+        driver.commercial_class = dl_split[4]
+        driver.noncommercial_class = dl_split[5]
+        driver.commercial_status = dl_split[6]
+        driver.noncommercial_status = dl_split[7]
+        driver.withdrawal_action = dl_split[8]
+
+        # Parse endorsement information, row 5
+        driver.endorsement = can_table_data[4]
+
+        # Parse confiction information, row 6
+        # Split string data, sixth row to components, stringify expected num data
+        convictions_split = [str(item) for item in can_table_data[5].split(" ")]
+
+        driver.convictions = convictions_split[0]
+        driver.accidents = convictions_split[1]
+        driver.withdrawals = convictions_split[2]
+        driver.permits = convictions_split[3]
+        driver.license_restrictions = convictions_split[4]
+
+        return driver
+
+
+    # __________________________________________________________________________________________________________________________________
 def main():
     # Instantiate driver data parser to read driver data from excel sheet
     ddp = DriverDataParser(os.path.join(WORKING_DIRECTORY, "DriverData.xlsx"))
@@ -212,7 +370,7 @@ def main():
 
             # If driver search fails, cut block and return to filter page
             if cw.search_driver(drv):
-                cw.snapshot_driver_info()
+                cw.snapshot_driver_info(drv)
                 cw.return_to_search_page()
             else:
                 continue
@@ -228,17 +386,6 @@ def main():
 
     cw.crawler.quit()
 
-
-class CdlisWebdataParser:
-    def __init__(self, web_document_html: WebElement):
-        self.web_doc = web_document_html
-
-
-    def parse_doc_to_lists(self):
-        doc_dict = {}
-        for i, line in enumerate(self.web_doc):
-            split_string_data = " ".join(line.text.splitlines()).split(" ")
-            doc_dict[f"header {i}"] = split_string_data[]  
 
 
 
