@@ -15,11 +15,8 @@ from datetime import date
 import pandas as pd
 from selenium.webdriver.support.ui import Select
 from selenium.webdriver.remote.webelement import WebElement
-import openpyxl
-import usaddress
-from typing_extensions import dataclass_transform
-from dataclasses import dataclass
-
+import json
+import time
 
 WORKING_DIRECTORY = os.path.dirname(os.path.abspath(__file__))
 
@@ -30,7 +27,9 @@ print("Getting Started!")
 # Show todays month and day
 print(f"Today's date is {date.today()}")
 
-# Helper function to format date of birth data, splitting standard DOB "01/01/2000" to a dict {month: "01", day: "01", year: "2000"}
+
+# Helper function to format date of birth data, splitting standard DOB "01/01/2000" to a dict {month: "01",
+# day: "01", year: "2000"}
 def parse_dob_str(dob_timestamp) -> dict:
     stringify_dob = dob_timestamp.strftime("%m/%d/%Y")
     month, day, year = stringify_dob.split("/")
@@ -40,6 +39,25 @@ def parse_dob_str(dob_timestamp) -> dict:
         "year": year
     }
     return formatted_date
+
+
+# Helper function to rename pdf downloads from cdlis to driver name
+def change_last_pdf_name(folder_path, new_name):
+    # Get a list of all PDF files in the folder
+    pdf_files = [file for file in os.listdir(folder_path) if file.lower().endswith('.pdf')]
+    # Sort the PDF files by modification time (latest first)
+    pdf_files.sort(key=lambda x: os.path.getmtime(os.path.join(folder_path, x)), reverse=True)
+
+    if pdf_files:
+        # Get the path of the last downloaded PDF
+        last_pdf_path = os.path.join(folder_path, pdf_files[0])
+        # Generate the new path with the desired name
+        new_pdf_path = os.path.join(folder_path, f"{new_name}.pdf")
+        # Rename the file
+        os.rename(last_pdf_path, new_pdf_path)
+        print(f"Renamed {pdf_files[0]} to {new_name}.pdf")
+    else:
+        print("No PDF files found in the folder.")
 
 
 class Driver:
@@ -104,7 +122,21 @@ class CdlisWebCrawler:
     def _build_crawler(self) -> webdriver:
         # Create options object and add detach to keep window open
         chrome_options = Options()
+        settings = {
+            "recentDestinations": [{
+                "id": "Save as PDF",
+                "origin": "local",
+                "account": "",
+            }],
+            "selectedDestinationId": "Save as PDF",
+            "version": 2,
+            "isLandscapeEnabled": True
+        }
+        prefs = {'printing.print_preview_sticky_settings.appState': json.dumps(settings),
+                 'savefile.default_directory': os.path.join(WORKING_DIRECTORY, 'output')}
+        chrome_options.add_experimental_option('prefs', prefs)
         chrome_options.add_argument("--start-maximized")
+        chrome_options.add_argument("--kiosk-printing")
 
         # Create service manager, this is a weak instantiation, this will break if not used on my work computer
         service = Service(os.path.join(WORKING_DIRECTORY, "chromedriver.exe"))
@@ -159,6 +191,8 @@ class CdlisWebCrawler:
 
     # input driver data
     def fill_driver_data(self, driver_data: Driver): # TODO add print statement to show driver being checked
+        print(f"Checking driver: {driver_data.last_name}, {driver_data.first_name}")
+
         # Fill in OLN
         oln_input = self.crawler.find_element(By.ID, "DriverLicense")
         oln_input.send_keys(driver_data.oln)
@@ -196,158 +230,19 @@ class CdlisWebCrawler:
         except NoSuchElementException:
             return True
 
-    def snapshot_driver_info(self, driver_data: Driver): # TODO Parse document information to excel sheet
-        # Get table data from CDLIS website, creates a list of webelement objects
-        table_data = self.crawler.find_elements(By.CLASS_NAME, "reportTable")
-        cwdp = CdlisWebdataParser(table_data)
-        
-        if driver_data.dl_country == "Canada":
-            formatted_webdata = cwdp.parse_doc_to_lists()
-            driver_table_parser = DriverTableParser()
-            print(driver_table_parser.parse_canada(formatted_webdata))
+    def snapshot_driver_info(self, driver_data: Driver):
+        self.crawler.execute_script("document.body.style.zoom='75%'")
+        self.crawler.execute_script('window.print();')
+        change_last_pdf_name(os.path.join(WORKING_DIRECTORY, "output"), f"{driver_data.last_name}_{driver_data.first_name}")
+        time.sleep(2)
 
     # navigate back to query filter page
     def return_to_search_page(self):
-        self.crawler.execute_script("document.body.style.zoom='100%'")  # Rezoom document or click coordinate will fail to execute
+        self.crawler.execute_script("document.body.style.zoom='100%'")
         self.crawler.find_element(By.CLASS_NAME, "Cancel").click()
 
 
-@dataclass
-class CanDriverData:
-    first_name: str = ""
-    middle_name: str = ""
-    last_name: str = ""
-    suffix: str = ""
-    ssn: str = ""
-    dob: str = ""
-    height: str = ""
-    weight: str = ""
-    eye_color: str = ""
-    sex: str = ""
-    address: str = ""
-    city: str = ""
-    state: str = ""
-    zip: str = ""
-    jurisdiction: str = ""
-    oln: str = ""
-    issue_date: str = ""
-    expiration_date: str = ""
-    commercial_class: str = ""
-    noncommercial_class: str = ""
-    commercial_status: str = ""
-    noncommercial_status: str = ""
-    withdrawal_action: str = ""
-    endorsement: str = ""
-    convictions: int = ""
-    accidents: int = ""
-    withdrawals: int = ""
-    permits: int = ""
-    license_restrictions: int = ""
-
-
-class DriverTableParser:
-    """ This class holds methods to parse CDLIS string table data for use in formatting to an excel output """
-    def __init__(self):
-        self.output_file = "DriverDataOutput.xlsx"
-
-    def parse_canada(self, can_table_data: list[str]) -> CanDriverData:
-        """ Parses driver data from a canadian driver CDLIS table """
-        driver = CanDriverData()
-
-        # Parse name information to dictionary, row 1
-        # Split string data, first row to components
-        name_split = can_table_data[0].split(" ")
-
-        # Parse data 
-        driver.first_name = name_split[0]
-        driver.middle_name = name_split[1]
-        driver.last_name = name_split[2]
-        driver.suffix = name_split[3]
-
-        # Parse DOB information to dictionary, row 2
-        # Split string data, second row to components
-        dob_split = can_table_data[1].split(" ")
-
-        # Parse data
-        driver.ssn = dob_split[0]
-        driver.dob = dob_split[1]
-        driver.height = dob_split[2]
-
-        # Match length of split data due to uncertainty of information. If weight and/or eye color is present the list will dynamically change
-        # from the input data
-        match len(dob_split):
-            case 6:
-                driver.weight = dob_split[3]
-                driver.eye_color = dob_split[4]
-                driver.sex = dob_split[5]
-            case 5:
-                driver.sex = dob_split[4]
-            case 4:
-                driver.sex = dob_split[3]
-
-
-        # Parse address information to dictionary, row 3
-        # Use usaddress module to parse address data 
-        address = can_table_data[2]
-        components = usaddress.parse(address)
-
-        # Create lists to assign parsed data as usaddress parses each string to a category in a list -> [(data, category), ..]
-        street_address = []
-        city = []
-        state = []
-        zip = []
-
-        # Parse categories to appropriate list
-        for item in components:
-            if item[1] in ["AddressNumber", "StreetName", "StreetNamePostType"]:
-                street_address.append(item[0])
-            elif item[1] in ["PlaceName"]:
-                city.append(item[0])
-            elif item[1] in ["StateName"]:
-                state.append(item[0])
-            elif item[1] in ["ZipCode"]:
-                zip.append(item[0])
-            else:
-                # Advise of unassigned categories for further processing if necessary
-                print(f"{item[1]} is unassigned")
-
-        # Assign parsed data to DriverData object
-        driver.address = " ".join(street_address)
-        driver.city = " ".join(city)
-        driver.state = " ".join(state)
-        driver.zip = " ".join(state)
-
-        # Parse DL information to dictionary, row 4
-        # Split string data, fourth row to components
-        dl_split = can_table_data[3].split(" ")
-
-        driver.jurisdiction = dl_split[0]
-        driver.oln = dl_split[1]
-        driver.issue_date = dl_split[2]
-        driver.expiration_date = dl_split[3]
-        driver.commercial_class = dl_split[4]
-        driver.noncommercial_class = dl_split[5]
-        driver.commercial_status = dl_split[6]
-        driver.noncommercial_status = dl_split[7]
-        driver.withdrawal_action = dl_split[8]
-
-        # Parse endorsement information, row 5
-        driver.endorsement = can_table_data[4]
-
-        # Parse confiction information, row 6
-        # Split string data, sixth row to components, stringify expected num data
-        convictions_split = [str(item) for item in can_table_data[5].split(" ")]
-
-        driver.convictions = convictions_split[0]
-        driver.accidents = convictions_split[1]
-        driver.withdrawals = convictions_split[2]
-        driver.permits = convictions_split[3]
-        driver.license_restrictions = convictions_split[4]
-
-        return driver
-
-
-    # __________________________________________________________________________________________________________________________________
+# ______________________________________________________________________________________________________________________
 def main():
     # Instantiate driver data parser to read driver data from excel sheet
     ddp = DriverDataParser(os.path.join(WORKING_DIRECTORY, "DriverData.xlsx"))
