@@ -17,6 +17,9 @@ from selenium.webdriver.support.ui import Select
 from selenium.webdriver.remote.webelement import WebElement
 import json
 import time
+import random
+import shutil
+import maskpass
 
 WORKING_DIRECTORY = os.path.dirname(os.path.abspath(__file__))
 
@@ -43,6 +46,9 @@ def parse_dob_str(dob_timestamp) -> dict:
 
 # Helper function to rename pdf downloads from cdlis to driver name
 def change_last_pdf_name(folder_path, new_name):
+    # Generate 3 digit code
+    code = random.randint(100, 999)
+
     # Get a list of all PDF files in the folder
     pdf_files = [file for file in os.listdir(folder_path) if file.lower().endswith('.pdf')]
     # Sort the PDF files by modification time (latest first)
@@ -52,13 +58,43 @@ def change_last_pdf_name(folder_path, new_name):
         # Get the path of the last downloaded PDF
         last_pdf_path = os.path.join(folder_path, pdf_files[0])
         # Generate the new path with the desired name
-        new_pdf_path = os.path.join(folder_path, f"{new_name}.pdf")
+        new_pdf_path = os.path.join(folder_path, f"{new_name}_{code}.pdf")
         # Rename the file
         os.rename(last_pdf_path, new_pdf_path)
-        print(f"Renamed {pdf_files[0]} to {new_name}.pdf")
+        print(f"Renamed {pdf_files[0]} to {new_name}_{code}.pdf")
     else:
         print("No PDF files found in the folder.")
 
+
+def clear_output():
+    # Empty output folder to prevent overwriting errors
+    output_path = os.path.join(WORKING_DIRECTORY, "output")
+    for file_name in os.listdir(output_path):
+        file_path = os.path.join(output_path, file_name)
+        if os.path.isfile(file_path):
+            os.remove(file_path)
+    print("Output directory cleared...")
+
+def consolidate_files():
+    output_path = os.path.join(WORKING_DIRECTORY, "output")
+
+    # Get path to investigation directory
+    investigation_path = input("What is the file path to your investigation directory?")
+
+    # Create directory for output files
+    if not os.path.exists(os.path.join(investigation_path, "Driver CDLIS Files")):
+        os.makedirs(os.path.join(investigation_path, "Driver CDLIS Files"))
+        print("Driver CDLIS file output directory created") 
+
+    # Transfer output files to investigation directory
+    for file_name in os.listdir(output_path):
+        file_path = os.path.join(output_path, file_name)
+        shutil.move(file_path, investigation_path)
+        print(f"Moved {file_name} to investigation directory")
+
+    shutil.copy(os.path.join(WORKING_DIRECTORY, "DriverData.xlsx"), investigation_path)
+    print("Driver data excel spreadsheet copied to investigation directory")
+    clear_output()
 
 class Driver:
     def __init__(self, first_name, last_name, oln, dob, country, state):
@@ -157,7 +193,7 @@ class CdlisWebCrawler:
 
         while True:
             self.login = input("Please input your CDLIS username:\n")
-            self.password = input("Please input your CDLIS password:\n")
+            self.password = maskpass.askpass("Please input your CDLIS password:\n")
 
             self.crawler.find_element(By.NAME, "UserName").send_keys(self.login)
             self.crawler.find_element(By.NAME, "Password").send_keys(self.password)
@@ -242,8 +278,10 @@ class CdlisWebCrawler:
         self.crawler.find_element(By.CLASS_NAME, "Cancel").click()
 
 
-# ______________________________________________________________________________________________________________________
-def main():
+def run():
+    # Clear output folder
+    clear_output()
+
     # Instantiate driver data parser to read driver data from excel sheet
     ddp = DriverDataParser(os.path.join(WORKING_DIRECTORY, "DriverData.xlsx"))
 
@@ -253,6 +291,7 @@ def main():
     # Navigate to CDLIS website, collect credentials, and login
     cw.navigate_to_cdlis_website()
     cw.navigate_through_splash_page()
+    time.sleep(2)
     cw.enter_credentials()
 
     # Verify there are drivers to check and run the cycle on all drivers listed in excel
@@ -280,6 +319,50 @@ def main():
     #print(f"Failed driver checks: {failed_drivers}")
 
     cw.crawler.quit()
+
+def reset_spreadsheet():
+    confirmation = input("Are you sure you want to reset the spreadsheet? (y/n) ")
+
+    if confirmation not in ["y", "n"]:
+        print(f"Sorry {confirmation} was not a valid command")
+        reset_spreadsheet()
+
+    if confirmation == "y":
+        spreadsheet_path = os.path.join(WORKING_DIRECTORY, "DriverData.xlsx")
+        data = pd.read_excel(spreadsheet_path)
+        data[:] = None
+        data.to_excel(spreadsheet_path, index=False)
+        print("Spreadsheet reset!")
+    else:
+        return
+
+
+def home_operations():
+
+    print("Welcome to the CDLIS Driver Checker!")
+    print("Please select an operation:")
+
+    while True:
+        operation = input("1. Run CDLIS Checks on DriverData.xlsx\n2. Reset DriverData.xlsx\n3. Exit\n")
+
+        if operation not in ["1", "2", "3"]:
+            print(f"Sorry, {operation} was not a valid command, please try again")
+            home_operations()
+
+        if operation == "1":
+            run()
+        elif operation == "2":
+            reset_spreadsheet()
+        elif operation == "3":
+            print("Exiting...")
+            quit()
+
+
+# ______________________________________________________________________________________________________________________
+def main():
+    while True:
+        home_operations()
+
 
 
 
