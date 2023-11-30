@@ -125,7 +125,7 @@ class DriverDataParser:
 
         # Choose an Excel file
         selection = str(input(f"\nSelect a driver list:\n{str_text}\n"))
-        return excel_dict[selection]
+        return os.path.join(WORKING_DIRECTORY, excel_dict[selection])
 
     # Read from file
     def _read_xlsx(self) -> pd.core.frame.DataFrame:
@@ -440,7 +440,10 @@ def home_operations():
 # ______________________________________________________________________________________________________________________
 def main():
     while True:
-        home_operations()
+        try:
+            home_operations()
+        except Exception as e:
+            print(e)
 
 
 if __name__ == "__main__":
