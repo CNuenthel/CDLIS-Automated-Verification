@@ -205,6 +205,7 @@ class CdlisWebCrawler:
     # navigate to CDLIS website
     def navigate_to_cdlis_website(self):
         self.crawler.get("https://cdlis.dot.gov/")
+        time.sleep(2)
 
     # complete authorization splash page
     def navigate_through_splash_page(self):
