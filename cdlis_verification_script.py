@@ -1,26 +1,33 @@
 """
 Limitations
-    Currently this application cannot be run using headless mode as snapshots are taken of a non-maximized screen.
+    * Currently this application cannot be run using headless mode as snapshots are taken of a non-maximized screen.
     I have not currently found a solution to creating a maximized screen in headless mode.
+
+    * Changes made to the CDLIS website will impact element location within Selenium webtesting framework which will
+    require crawler updates
+
+    * User must have the Chrome browser installed and updated to the latest version. An automated chromedriver download
+    script is included in the project. The auto downloader is limited to Windows 32bit.
 """
 
 from selenium import webdriver
-from selenium.webdriver.chrome.options import Options
-from selenium.webdriver.common.by import By
 from selenium.common.exceptions import NoSuchElementException
-import os
-from selenium.webdriver.chrome.service import Service
-from datetime import date
-import pandas as pd
-from selenium.webdriver.support.ui import Select
 from selenium.webdriver.remote.webelement import WebElement
-import json
-import time
+from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.chrome.service import Service
+from selenium.webdriver.support.ui import Select
+from selenium.webdriver.common.by import By
+from datetime import date
+
+from cryptography.fernet import Fernet
+import pandas as pd
+import maskpass
 import random
 import shutil
-import maskpass
-from cryptography.fernet import Fernet
+import json
+import time
 import re
+import os
 
 WORKING_DIRECTORY = os.path.dirname(os.path.abspath(__file__))
 
@@ -36,11 +43,7 @@ print(f"Today's date is {date.today()}")
 def parse_dob_str(dob_timestamp) -> dict:
     stringify_dob = dob_timestamp.strftime("%m/%d/%Y")
     month, day, year = stringify_dob.split("/")
-    formatted_date = {
-        "month": month,
-        "day": day,
-        "year": year
-    }
+    formatted_date = {"month": month, "day": day, "year": year}
     return formatted_date
 
 
@@ -50,9 +53,14 @@ def change_last_pdf_name(folder_path, new_name):
     code = random.randint(100, 999)
 
     # Get a list of all PDF files in the folder
-    pdf_files = [file for file in os.listdir(folder_path) if file.lower().endswith('.pdf')]
+    pdf_files = [
+        file for file in os.listdir(folder_path)
+        if file.lower().endswith('.pdf')
+    ]
     # Sort the PDF files by modification time (latest first)
-    pdf_files.sort(key=lambda x: os.path.getmtime(os.path.join(folder_path, x)), reverse=True)
+    pdf_files.sort(
+        key=lambda x: os.path.getmtime(os.path.join(folder_path, x)),
+        reverse=True)
 
     if pdf_files:
         # Get the path of the last downloaded PDF
@@ -80,25 +88,30 @@ def consolidate_files():
     output_path = os.path.join(WORKING_DIRECTORY, "output")
 
     # Get path to investigation directory
-    investigation_path = input("What is the file path to your investigation directory?")
+    investigation_path = input(
+        "What is the file path to your investigation directory?")
 
     # Create directory for output files
-    if not os.path.exists(os.path.join(investigation_path, "Driver CDLIS Files")):
+    if not os.path.exists(
+            os.path.join(investigation_path, "Driver CDLIS Files")):
         os.makedirs(os.path.join(investigation_path, "Driver CDLIS Files"))
         print("Driver CDLIS file output directory created")
 
-        # Transfer output files to investigation directory
+    # Transfer output files to investigation directory
     for file_name in os.listdir(output_path):
         file_path = os.path.join(output_path, file_name)
         shutil.move(file_path, investigation_path)
         print(f"Moved {file_name} to investigation directory")
 
-    shutil.copy(os.path.join(WORKING_DIRECTORY, "DriverData.xlsx"), investigation_path)
+    shutil.copy(os.path.join(WORKING_DIRECTORY, "DriverData.xlsx"),
+                investigation_path)
     print("Driver data excel spreadsheet copied to investigation directory")
     clear_output()
 
 
+# Create driver class to easily pass around driver data between functions
 class Driver:
+
     def __init__(self, first_name, last_name, oln, dob, country, state):
         self.first_name = first_name
         self.last_name = last_name
@@ -108,7 +121,9 @@ class Driver:
         self.dl_state = state
 
 
+# Class to read Excel driver data, parse to Driver class and yield drivers at request
 class DriverDataParser:
+
     def __init__(self):
         self.csv_path = self._select_excel_file()
         self.df_data = self._read_xlsx()
@@ -119,9 +134,15 @@ class DriverDataParser:
         dir_list = os.listdir(WORKING_DIRECTORY)
 
         # Filter and format Excel files for display
-        excel_files = [file for file in dir_list if file.endswith(('.xls', '.xlsx'))]
-        excel_dict = {str(i): file for i, file in enumerate(excel_files, start=1)}
-        str_text = "\n".join([f"{i}. {file}" for i, file in enumerate(excel_files, start=1)])
+        excel_files = [
+            file for file in dir_list if file.endswith(('.xls', '.xlsx'))
+        ]
+        excel_dict = {
+            str(i): file
+            for i, file in enumerate(excel_files, start=1)
+        }
+        str_text = "\n".join(
+            [f"{i}. {file}" for i, file in enumerate(excel_files, start=1)])
 
         # Choose an Excel file
         selection = str(input(f"\nSelect a driver list:\n{str_text}\n"))
@@ -142,34 +163,23 @@ class DriverDataParser:
 
         for i, row in self.df_data.iterrows():
             if row["CDLIS"] == "Y":
-                driver_pool.append(Driver(
-                    row["Driver First Name"],
-                    row["Driver Last Name"],
-                    alphanumeric_with_star(row["License #"]),
-                    row["Date of Birth (MM/DD/YYYY)"],
-                    "United States of America",
-                    row["License State"]
-                ))
+                driver_pool.append(
+                    Driver(row["Driver First Name"], row["Driver Last Name"],
+                           alphanumeric_with_star(row["License #"]),
+                           row["Date of Birth (MM/DD/YYYY)"],
+                           "United States of America", row["License State"]))
         return driver_pool
 
     # Create a list of driver objects and return the list
-    def get_driver(self) -> Driver or bool:
+    def get_driver(self):
         if self.driver_pool:
             return self.driver_pool.pop()
         return False
 
 
-class CdlisWebdataParser:
-    def __init__(self, web_document_html: list[WebElement]):
-        self.web_doc = web_document_html
-
-    def parse_doc_to_lists(self) -> list[str]:
-        string_data = " ".join([item.text for item in self.web_doc])
-        split_string_data = [item for i, item in enumerate(string_data.splitlines()) if item != "" and i % 2 == 0]
-        return split_string_data
-
-
+# Webcrawler class to run driver data through CDLIS and save results to output folder
 class CdlisWebCrawler:
+
     def __init__(self, driver_data_parser: DriverDataParser):
         self.data_parser = driver_data_parser
         self.crawler = self._build_crawler()
@@ -187,19 +197,27 @@ class CdlisWebCrawler:
                 "origin": "local",
                 "account": "",
             }],
-            "selectedDestinationId": "Save as PDF",
-            "version": 2,
-            "isLandscapeEnabled": True
+            "selectedDestinationId":
+            "Save as PDF",
+            "version":
+            2,
+            "isLandscapeEnabled":
+            True
         }
-        prefs = {'printing.print_preview_sticky_settings.appState': json.dumps(settings),
-                 'savefile.default_directory': os.path.join(WORKING_DIRECTORY, 'output')}
+        prefs = {
+            'printing.print_preview_sticky_settings.appState':
+            json.dumps(settings),
+            'savefile.default_directory': os.path.join(WORKING_DIRECTORY,
+                                                       'output')
+        }
         chrome_options.add_experimental_option('prefs', prefs)
         chrome_options.add_argument("--start-maximized")
         chrome_options.add_argument("--kiosk-printing")
 
         # Create service manager, this is a weak instantiation, this will break if not used on my work computer
         service = Service(os.path.join(WORKING_DIRECTORY, "chromedriver.exe"))
-        crawler = webdriver.Chrome(service=service, options=chrome_options)  # Create webdriver object
+        crawler = webdriver.Chrome(
+            service=service, options=chrome_options)  # Create webdriver object
         return crawler
 
     # navigate to CDLIS website
@@ -214,7 +232,6 @@ class CdlisWebCrawler:
         return
 
     def enter_credentials(self):
-
         # Check for credentials
         with open(os.path.join(WORKING_DIRECTORY, "config.json"), "r") as f:
             data = json.load(f)
@@ -238,28 +255,40 @@ class CdlisWebCrawler:
             manual_entry = False
             if user_credentials:
                 print(f"Logging in as {self.login}... \n")
-                self.crawler.find_element(By.NAME, "UserName").send_keys(self.login)
-                self.crawler.find_element(By.NAME, "Password").send_keys(self.password)
-                self.crawler.find_element(By.XPATH, '//*[@id="loginForm"]/form/fieldset/input').click()
+                self.crawler.find_element(By.NAME,
+                                          "UserName").send_keys(self.login)
+                self.crawler.find_element(By.NAME,
+                                          "Password").send_keys(self.password)
+                self.crawler.find_element(
+                    By.XPATH,
+                    '//*[@id="loginForm"]/form/fieldset/input').click()
 
             # No credentials were taken, so we request manual entry of credentials
             else:
                 self.login = input("\nPlease input your CDLIS username:\n")
-                self.password = maskpass.askpass("Please input your CDLIS password:\n")
+                self.password = maskpass.askpass(
+                    "Please input your CDLIS password:\n")
                 manual_entry = True
 
                 print("\nLogging in... \n")
-                self.crawler.find_element(By.NAME, "UserName").send_keys(self.login)
-                self.crawler.find_element(By.NAME, "Password").send_keys(self.password)
-                self.crawler.find_element(By.XPATH, '//*[@id="loginForm"]/form/fieldset/input').click()
+                self.crawler.find_element(By.NAME,
+                                          "UserName").send_keys(self.login)
+                self.crawler.find_element(By.NAME,
+                                          "Password").send_keys(self.password)
+                self.crawler.find_element(
+                    By.XPATH,
+                    '//*[@id="loginForm"]/form/fieldset/input').click()
 
             # Try logging in with given credentials
             try:
                 self.crawler.find_element(By.NAME, "UserName")
-                self.crawler.find_element(By.NAME, "UserName").clear()  # Clear incorrect inputs
+                self.crawler.find_element(
+                    By.NAME, "UserName").clear()  # Clear incorrect inputs
                 self.crawler.find_element(By.NAME, "Password").clear()
-                print("\nSorry, your credentials were not validated, please try again. If your credentials are stored"
-                      "please update your saved credentials following a successful login.\n")
+                print(
+                    "\nSorry, your credentials were not validated, please try again. If your credentials are stored"
+                    "please update your saved credentials following a successful login.\n"
+                )
                 # Flag credentials as false due to failed login, can occur on saved credentials and will request
                 # Manual credential entry
                 user_credentials = False
@@ -269,17 +298,21 @@ class CdlisWebCrawler:
 
         # Ask if user would like to save credentials
         if manual_entry:
-            save_credentials = input("Would you like to save your credentials? Y/N\n")
+            save_credentials = input(
+                "Would you like to save your credentials? Y/N\n")
 
             # Save credentials
             if save_credentials.lower() == "y":
-                str_encoded_username = fernet.encrypt(self.login.encode()).decode()
-                str_encoded_password = fernet.encrypt(self.password.encode()).decode()
+                str_encoded_username = fernet.encrypt(
+                    self.login.encode()).decode()
+                str_encoded_password = fernet.encrypt(
+                    self.password.encode()).decode()
 
                 data["username"] = str_encoded_username
                 data["password"] = str_encoded_password
 
-                with open(os.path.join(WORKING_DIRECTORY, "config.json"), "w") as f:
+                with open(os.path.join(WORKING_DIRECTORY, "config.json"),
+                          "w") as f:
                     json.dump(data, f, indent=2)
 
                 print("\nCredentials saved!\n")
@@ -296,16 +329,22 @@ class CdlisWebCrawler:
         }
 
         # TODO determine spreadsheet basics for nationality, for now all will be set as USA
-        territory_dropdown = Select(self.crawler.find_element(By.ID, "ddlCountryFilter"))
-        territory_dropdown.select_by_value(query_library[driver_data.dl_country])
-        jurisdiction_dropdown = Select(self.crawler.find_element(By.ID, "ddlJurisdiction"))
-        self.crawler.implicitly_wait(1)  # Hold the page to update jurisdictional drop down options
+        territory_dropdown = Select(
+            self.crawler.find_element(By.ID, "ddlCountryFilter"))
+        territory_dropdown.select_by_value(
+            query_library[driver_data.dl_country])
+        jurisdiction_dropdown = Select(
+            self.crawler.find_element(By.ID, "ddlJurisdiction"))
+        self.crawler.implicitly_wait(
+            1)  # Hold the page to update jurisdictional drop down options
         jurisdiction_dropdown.select_by_value(driver_data.dl_state)
         self.crawler.find_element(By.ID, "btnStartFilter").click()
 
     # input driver data
     def fill_driver_data(self, driver_data: Driver):
-        print(f"Checking driver: {driver_data.last_name}, {driver_data.first_name}")
+        print(
+            f"Checking driver: {driver_data.last_name}, {driver_data.first_name}"
+        )
 
         # Fill in OLN
         oln_input = self.crawler.find_element(By.ID, "DriverLicense")
@@ -333,22 +372,32 @@ class CdlisWebCrawler:
         dob_year.send_keys(dob_dict["year"])
 
     def search_driver(self, driver_data: Driver) -> bool:
-        self.crawler.find_element(By.XPATH, '//*[@id="RequestForm"]/fieldset/ol/li[6]/input[1]').click()
+        self.crawler.find_element(
+            By.XPATH,
+            '//*[@id="RequestForm"]/fieldset/ol/li[6]/input[1]').click()
 
         # Verify if driver was found with given information
         try:
             self.crawler.find_element(By.ID, "DriverLicense")
-            print(f"\n!! Driver not found with given credentials: {driver_data.last_name},{driver_data.first_name} !!\n")
+            print(
+                f"\n!! Driver not found with given credentials: {driver_data.last_name},{driver_data.first_name} !!\n"
+            )
+            # If driver info was not returned notify and add to failed drivers list
+            self.failed_searches.append(f"{driver_data.last_name}, {driver_data.first_name}")
             self.crawler.find_element(By.CLASS_NAME, "Cancel valid")
             return False
+            
         except NoSuchElementException:
-            return True
+            return True # Driver was found
 
     def snapshot_driver_info(self, driver_data: Driver):
+        # Print driver CDLIS return info to .pdf and rename to driver name
+        # A 3 digit code is appended to the end of the file name to handle duplicate file names
         self.crawler.execute_script("document.body.style.zoom='75%'")
         self.crawler.execute_script('window.print();')
-        change_last_pdf_name(os.path.join(WORKING_DIRECTORY, "output"),
-                             f"{driver_data.last_name}_{driver_data.first_name}")
+        change_last_pdf_name(
+            os.path.join(WORKING_DIRECTORY, "output"),
+            f"{driver_data.last_name}_{driver_data.first_name}")
         time.sleep(2)
 
     # navigate back to query filter page
@@ -375,7 +424,8 @@ def run():
 
     # Verify there are drivers to check and run the cycle on all drivers listed in excel
     while True:
-        drv = cw.data_parser.get_driver()  # Obtain a driver from the Excel data parser
+        drv = cw.data_parser.get_driver(
+        )  # Obtain a driver from the Excel data parser
 
         if drv:  # Collect driver information from CDLIS
             cw.select_query_filters(drv)
@@ -392,7 +442,9 @@ def run():
         else:
             break
 
-    print("\nDriver checks complete! Please review the output folder for collected data")
+    print(
+        "\nDriver checks complete! Please review the output folder for collected data"
+    )
 
     failed_drivers = "\n".join(cw.failed_searches)
     print(f"Failed driver checks: {failed_drivers}\n")
@@ -401,13 +453,15 @@ def run():
 
 
 def reset_spreadsheet():
-    confirmation = input("Are you sure you want to reset the spreadsheet? (y/n) ")
+    # Reset the spreadsheet to the original state
+    confirmation = input(
+        "Are you sure you want to reset the spreadsheet? (y/n) ")
 
-    if confirmation not in ["y", "n"]:
+    if confirmation.lower() not in ["y", "n"]:
         print(f"Sorry {confirmation} was not a valid command")
         reset_spreadsheet()
 
-    if confirmation == "y":
+    if confirmation.lower() == "y":
         spreadsheet_path = os.path.join(WORKING_DIRECTORY, "DriverData.xlsx")
         data = pd.read_excel(spreadsheet_path)
         data[:] = None
@@ -422,10 +476,15 @@ def home_operations():
 
     while True:
         print("\nPlease select an operation:")
-        operation = input("1. Run CDLIS Checks\n2. Reset Credentials\n3. Exit\n\n")
+        
+        # Have user select an operation
+        operation = input(
+            "1. Run CDLIS Checks\n2. Reset Credentials\n3. Exit\n\n")
 
         if operation not in ["1", "2", "3"]:
-            print(f"Sorry, {operation} was not a valid command, please try again")
+            print(
+                f"Sorry, {operation} was not a valid command, please try again"
+            )
             home_operations()
 
         if operation == "1":
@@ -435,7 +494,8 @@ def home_operations():
             verify = input("\nReset your saved credentials? Y/N\n")
 
             if verify.lower() == "y":
-                with open(os.path.join(WORKING_DIRECTORY, "config.json"), "w") as f:
+                with open(os.path.join(WORKING_DIRECTORY, "config.json"),
+                          "w") as f:
                     data = {"username": "", "password": ""}
                     json.dump(data, f, indent=2)
                 print("\nCredentials have been reset!\n")
