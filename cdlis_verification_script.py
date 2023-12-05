@@ -237,7 +237,7 @@ class CdlisWebCrawler:
             # If we have credentials, immediately start the login process
             manual_entry = False
             if user_credentials:
-                print("Logging in... \n")
+                print(f"Logging in as {self.login}... \n")
                 self.crawler.find_element(By.NAME, "UserName").send_keys(self.login)
                 self.crawler.find_element(By.NAME, "Password").send_keys(self.password)
                 self.crawler.find_element(By.XPATH, '//*[@id="loginForm"]/form/fieldset/input').click()
@@ -392,10 +392,10 @@ def run():
         else:
             break
 
-    print("Driver checks complete! Please review the output folder for collected data")
+    print("\nDriver checks complete! Please review the output folder for collected data")
 
-    # failed_drivers = "\n".join(cw.failed_searches)
-    # print(f"Failed driver checks: {failed_drivers}")
+    failed_drivers = "\n".join(cw.failed_searches)
+    print(f"Failed driver checks: {failed_drivers}\n")
 
     cw.crawler.quit()
 
@@ -419,21 +419,32 @@ def reset_spreadsheet():
 
 def home_operations():
     print("Welcome to the CDLIS Driver Checker!")
-    print("Please select an operation:")
 
     while True:
-        operation = input("1. Run CDLIS Checks\n2. Exit\n")
+        print("\nPlease select an operation:")
+        operation = input("1. Run CDLIS Checks\n2. Reset Credentials\n3. Exit\n\n")
 
-        if operation not in ["1", "2"]:
+        if operation not in ["1", "2", "3"]:
             print(f"Sorry, {operation} was not a valid command, please try again")
             home_operations()
 
         if operation == "1":
             run()
+
         elif operation == "2":
-            reset_spreadsheet()
+            verify = input("\nReset your saved credentials? Y/N\n")
+
+            if verify.lower() == "y":
+                with open(os.path.join(WORKING_DIRECTORY, "config.json"), "w") as f:
+                    data = {"username": "", "password": ""}
+                    json.dump(data, f, indent=2)
+                print("\nCredentials have been reset!\n")
+            else:
+                continue
+
         elif operation == "3":
-            print("Exiting...")
+            print("Thank you for using the automated CDLIS runner!")
+            time.sleep(3)
             quit()
 
 
