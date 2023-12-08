@@ -1,0 +1,101 @@
+import requests
+import json
+import os
+from zipfile import ZipFile
+import shutil 
+import time
+import traceback
+import sys
+from tqdm import tqdm
+import random
+
+# Establish the working directory location
+WORKING_DIRECTORY = os.path.dirname(os.path.abspath(__file__))
+
+# Establish executable directory
+exe_directory = os.path.dirname(sys.executable)
+
+# Downloader url base
+base_url = "https://googlechromelabs.github.io/chrome-for-testing"
+
+# Endpoint for all good versions on latest drivers
+downloader_endpoint = "/last-known-good-versions-with-downloads.json"
+
+# Remove currently downloaded chromedriver if it exists
+def remove_chromedriver() -> None:
+    internal_path = os.path.join(exe_directory, "_internal", "chromedriver.exe")
+    if os.path.exists(internal_path):
+        print("Removing established chromedriver file...")
+        os.remove(internal_path)
+        print("Chromedriver removed")
+
+
+# Get json data containing downloader endpoints for zipfiles
+def download_driver_endpoint_data():
+    response = requests.get(base_url + downloader_endpoint)
+    return response.status_code, response
+
+
+def download_chromedriver(url):
+    # Parse json data
+    data = json.loads(url.text)
+    # Select win32 chromedriver download url data
+    download_address = data["channels"]["Stable"]["downloads"]["chromedriver"][3]["url"]
+    # Get chromedriver-win32 zipfile
+    response = requests.get(download_address)
+    return response.status_code, response
+
+
+def extract_driver(zipfile):
+# Safe zipfile to machine
+    with open(os.path.join(WORKING_DIRECTORY, "chromedriver.zip"), mode="wb") as f:
+        f.write(zipfile.content)
+    print("Zipfile written")
+    # Extract files from chromedriver zipfile
+    with ZipFile(os.path.join(WORKING_DIRECTORY, "chromedriver.zip"), "r") as zipfile:
+        zipfile.extractall(WORKING_DIRECTORY)
+
+    # Remove zip file from directory
+    os.remove(os.path.join(WORKING_DIRECTORY, "chromedriver.zip"))
+
+    # Move chromedriver.exe from extract file to working directory
+    path_to_chromedriver = os.path.join(WORKING_DIRECTORY, "chromedriver-win32/chromedriver.exe")
+    shutil.move(path_to_chromedriver, os.path.join(exe_directory, "_internal"))
+
+    # Clean up chromedriver-win32 directory
+    for file in os.listdir(os.path.join(WORKING_DIRECTORY, "chromedriver-win32")):
+        os.remove(os.path.join(WORKING_DIRECTORY, "chromedriver-win32", file))    
+    os.removedirs(os.path.join(WORKING_DIRECTORY, "chromedriver-win32"))
+    print("Chromedriver successfuly downloaded, please verify that you have the latest version of Chrome installed.")
+
+def run():
+    remove_chromedriver()
+    status_code, response = download_driver_endpoint_data()
+
+    if status_code == 200:
+        status_code, response = download_chromedriver(response)
+    else:
+        print("Error downloading chromedriver endpoint json data")
+
+    if status_code == 200:
+        extract_driver(response)
+    else:
+        print("Error downloading chromedriver zip file")
+
+    print("The downloader will now close...")
+    time.sleep(5)
+    sys.exit()
+
+
+
+if __name__ == "__main__":
+    try:
+        print("Downloading Chromedriver...")
+        for _ in tqdm(range(random.randint(25, 40))):
+            time.sleep(0.1)
+        run()
+    except Exception as error:
+        print(error)
+        print(traceback.format_exc())
+        time.sleep(50)
+
