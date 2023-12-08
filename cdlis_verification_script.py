@@ -26,6 +26,7 @@ import random
 import shutil
 import json
 import time
+import sys
 import re
 import os
 
@@ -380,13 +381,13 @@ class CdlisWebCrawler:
         try:
             self.crawler.find_element(By.ID, "DriverLicense")
             print(
-                f"\n!! Driver not found with given credentials: {driver_data.last_name},{driver_data.first_name} !!\n"
+                f"\n!! Driver not found with given credentials: {driver_data.last_name}, {driver_data.first_name}: [{driver_data.dl_state}] {driver_data.oln} !!\n"
             )
             # If driver info was not returned notify and add to failed drivers list
             self.failed_searches.append(f"{driver_data.last_name}, {driver_data.first_name}")
-            self.crawler.find_element(By.CLASS_NAME, "Cancel valid")
+            self.crawler.find_element(By.XPATH, '//*[@id="RequestForm"]/fieldset/ol/li[6]/input[2]').click()
             return False
-            
+
         except NoSuchElementException:
             return True # Driver was found
 
@@ -432,7 +433,8 @@ def run():
             cw.fill_driver_data(drv)
 
             # If driver search fails, cut block and return to filter page
-            if cw.search_driver(drv):
+            result =  cw.search_driver(drv)
+            if result:
                 cw.snapshot_driver_info(drv)
                 cw.return_to_search_page()
             else:
@@ -447,7 +449,7 @@ def run():
     )
 
     failed_drivers = "\n".join(cw.failed_searches)
-    print(f"Failed driver checks: {failed_drivers}\n")
+    print(f"Failed driver checks:\n{failed_drivers}\n")
 
     cw.crawler.quit()
 
@@ -476,7 +478,7 @@ def home_operations():
 
     while True:
         print("\nPlease select an operation:")
-        
+
         # Have user select an operation
         operation = input(
             "1. Run CDLIS Checks\n2. Reset Credentials\n3. Exit\n\n")
@@ -505,7 +507,7 @@ def home_operations():
         elif operation == "3":
             print("Thank you for using the automated CDLIS runner!")
             time.sleep(3)
-            quit()
+            sys.exit()
 
 
 # ______________________________________________________________________________________________________________________
